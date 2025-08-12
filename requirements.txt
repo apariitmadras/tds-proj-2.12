@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+python-multipart
+openai
+requests
+beautifulsoup4
+lxml
+html5lib
+pandas
+numpy
+matplotlib
+duckdb
+pyarrow
