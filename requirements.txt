@@ -11,3 +11,4 @@ numpy
 matplotlib
 duckdb
 pyarrow
+google-genai>=1.1
