@@ -1,0 +1,48 @@
+Okay, I will break down the task into smaller, manageable steps.
+
+**Task Breakdown:**
+
+1.  **Data Acquisition:**
+    *   **Action:** Scrape the HTML content from the provided Wikipedia URL: `https://en.wikipedia.org/wiki/List_of_highest-grossing_films`.
+    *   **Tools/Libraries:** Use a web scraping library like `requests` (for fetching HTML) and `BeautifulSoup4` (for parsing HTML) in Python.
+
+2.  **Data Extraction and Cleaning:**
+    *   **Action:** Locate the table containing the list of highest-grossing films within the scraped HTML. Inspect the HTML structure to identify the correct table element.
+    *   **Action:** Extract the relevant data from the table, including:
+        *   Rank
+        *   Film Title
+        *   Worldwide Gross
+        *   Year
+        *   Peak Gross (This refers to the highest gross at some point)
+    *   **Action:** Clean the extracted data. This includes:
+        *   Removing currency symbols (e.g., "$") and commas from the "Worldwide Gross" and "Peak Gross" columns.
+        *   Converting the "Year", "Worldwide Gross", and "Peak Gross" columns to the appropriate numeric data types (integer for year, float for gross amounts).
+    *   **Tools/Libraries:** Continue using `BeautifulSoup4` for HTML parsing and standard Python data manipulation techniques (e.g., string manipulation, type conversion).
+
+3.  **Question 1: How many $2 bn movies were released before 2020?**
+    *   **Action:** Filter the data to include only films with "Worldwide Gross" greater than or equal to 2,000,000,000 and "Year" less than 2020.
+    *   **Action:** Count the number of films that meet these criteria.
+    *   **Tools/Libraries:** Python filtering and counting functions.
+
+4.  **Question 2: Which is the earliest film that grossed over $1.5 bn?**
+    *   **Action:** Filter the data to include only films with "Worldwide Gross" greater than or equal to 1,500,000,000.
+    *   **Action:** Sort the filtered data by "Year" in ascending order.
+    *   **Action:** Get the film title of the first entry in the sorted data.
+    *   **Tools/Libraries:** Python filtering, sorting, and data access functions.
+
+5.  **Question 3: What's the correlation between the Rank and Peak?**
+    *   **Action:** Calculate the Pearson correlation coefficient between the "Rank" and "Peak" columns.
+    *   **Tools/Libraries:** Use the `pandas` library for easy correlation calculation.
+
+6.  **Question 4: Draw a scatterplot of Rank and Peak along with a dotted red regression line through it. Return as a base-64 encoded data URI, `"data:image/png;base64,iVBORw0KG..."` under 100,000 bytes.**
+    *   **Action:** Create a scatterplot using the "Rank" and "Peak" data.
+    *   **Action:** Calculate the linear regression line.
+    *   **Action:** Overlay the regression line on the scatterplot. The line should be dotted and red.
+    *   **Action:** Save the plot as a PNG image.
+    *   **Action:** Encode the PNG image as a base64 data URI.
+    *   **Tools/Libraries:** `matplotlib` and `seaborn` (for plotting) in Python, `scipy` for regression line calculation. The plot image must be kept under the given byte limit which requires to optimize plot parameters, image size, DPI etc.
+
+7.  **Output Formatting:**
+    *   **Action:** Format the answers to questions 1, 2, and 3 as a JSON array of strings.
+    *   **Action:** Combine the JSON array with the base64 data URI (from question 4) in the final response.
+    *   **Tools/Libraries:** `json` library for creating JSON strings.

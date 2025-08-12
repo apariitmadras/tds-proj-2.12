@@ -1,0 +1,41 @@
+Here's a breakdown of the questions and a plan to address them:
+
+**1. Variables and Parameters:**
+
+*   `s3_bucket_path`: `s3://indian-high-court-judgments/` (Base path for the S3 bucket)
+*   `metadata_parquet_path`: `metadata/parquet/year=*/court=*/bench=*/metadata.parquet?s3_region=ap-south-1` (Path to the parquet files containing metadata)
+*   `courts_of_interest`: All courts (For the first question) and `33_10` (For the second and third questions)
+*   `start_year`: 2019 (For the first question)
+*   `end_year`: 2022 (For the first question)
+*   `columns_of_interest`: `court`, `decision_date`, `date_of_registration`, `year` (For the analysis)
+*   `court_code`: `33_10`
+*   `image_format`: `webp` (for the base64 image)
+
+**2. Expected Output:**
+
+```json
+{
+  "Which high court disposed the most cases from 2019 - 2022?": "...",
+  "What's the regression slope of the date_of_registration - decision_date by year in the court=33_10?": "...",
+  "Plot the year and # of days of delay from the above question as a scatterplot with a regression line. Encode as a base64 data URI under 100,000 characters": "data:image/webp;base64,..."
+}
+```
+
+**3. Step-by-Step Guidance:**
+
+**Question 1: Which high court disposed the most cases from 2019 - 2022?**
+
+1.  **Data Loading and Filtering:** Load the `metadata.parquet` files from the S3 bucket, filtering by year (2019-2022). The provided DuckDB query can be adapted to include a `WHERE` clause to filter the data by year.
+2.  **Aggregation:** Group the filtered data by `court` and count the number of cases (`COUNT(*)`) for each court.
+3.  **Ordering and Selection:** Order the results in descending order based on the case count and select the court with the highest count.
+
+**Question 2: What's the regression slope of the date\_of\_registration - decision\_date by year in the court=33\_10?**
+
+1.  **Data Loading and Filtering:** Load the `metadata.parquet` files from the S3 bucket, filtering by `court_code` (`33_10`) and extract the relevant columns (`date_of_registration`, `decision_date`, and `year`). Convert the date columns to the correct data type (Date) and calculate the difference between the registration and decision dates in days.
+2.  **Regression Analysis:** Using appropriate tools, perform a linear regression using `year` as the independent variable (X-axis) and the calculated date difference (in days) as the dependent variable (Y-axis). The regression slope represents the rate of change of the delay with respect to the year.
+
+**Question 3: Plot the year and # of days of delay from the above question as a scatterplot with a regression line. Encode as a base64 data URI under 100,000 characters**
+
+1.  **Data Preparation:** Retrieve the data from step 2, including the calculated delay in days and `year`.
+2.  **Plotting:** Create a scatter plot with `year` on the x-axis and the delay (in days) on the y-axis. Overlay a regression line representing the linear regression result from question 2.
+3.  **Encoding:** Encode the plot as a `webp` image and convert it to a base64 data URI, ensuring the resulting string is under 100,000 characters. Libraries like `matplotlib` and `plotly` can be used for this purpose, along with `io.BytesIO` and `base64` to handle the encoding.
