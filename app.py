@@ -1,135 +1,139 @@
-# /// script
-# requires-python = ">=3.11"
-# dependencies = [
-#   "fastapi",
-#   "python-multipart",
-#   "uvicorn",
-#   "google-genai",
-# ]
-# ///
+# app.py
+from __future__ import annotations
 
-from fastapi import FastAPI, Request  
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from google import genai
 import os
 import re
+import sys
+import json
 import subprocess
+from typing import List
 
-app = FastAPI()
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, PlainTextResponse
+from google import genai
 
-app.add_middleware(CORSMiddleware, allow_origins=["*"]) # Allow GET requests from all origins
-# Or, provide more granular control:
+# ---------- Config (env-driven) ----------
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash-lite")
+
+def get_gemini_client() -> genai.Client:
+    api_key = os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        # Crash early & clearly if the key isn't there
+        raise RuntimeError("GOOGLE_API_KEY not set")
+    return genai.Client(api_key=api_key)
+
+# ---------- FastAPI app ----------
+app = FastAPI(title="TDS Project – Multi-step LLM Runner")
+
+# CORS (open for simplicity; tighten if you have a frontend domain)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow a specific domain
-    allow_credentials=True,  # Allow cookies
-    allow_methods=["*"],  # Allow specific methods
-    allow_headers=["*"],  # Allow all headers
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
-def task_breakdown(task:str):
-    """Breaks down a task into smaller programmable steps using Google GenAI."""
-    client = genai.Client(api_key="asfd")
 
-    task_breakdown_file = os.path.join('prompts', "b-2.txt")
-    with open(task_breakdown_file, 'r') as f:
-        task_breakdown_prompt = f.read()
+# ---------- Helpers ----------
+def _read_text(path: str) -> str:
+    with open(path, "r", encoding="utf-8") as f:
+        return f.read()
 
-    response = client.models.generate_content(
-        model="gemini-2.0-flash-lite",
-        contents=[task,task_breakdown_prompt],
+def _write_text(path: str, text: str) -> None:
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(text)
+
+def _strip_code_fences(txt: str) -> str:
+    # Remove ```lang and ``` fences; keep inner code only
+    cleaned = re.sub(r"```[a-zA-Z0-9_-]*\s*", "", txt)
+    cleaned = cleaned.replace("```", "")
+    return cleaned.strip()
+
+# ---------- LLM stages ----------
+def task_breakdown(task: str) -> str:
+    """Stage 1: Ask Gemini to break down the user's task."""
+    client = get_gemini_client()
+    prompt_path = os.path.join("prompts", "b-2.txt")
+    task_breakdown_prompt = _read_text(prompt_path)
+
+    resp = client.models.generate_content(
+        model=GEMINI_MODEL,
+        contents=[task, task_breakdown_prompt],
     )
+    text = resp.text or ""
+    _write_text("broken_tasks.txt", text)
+    return text
 
-    with open("broken_tasks.txt", "w") as f:
-        f.write(response.text)
+def write_code(_: str) -> str:
+    """Stage 2: Ask Gemini to write Python code for the broken-down steps."""
+    tasks = _read_text("broken_tasks.txt")
+    client = get_gemini_client()
 
-    return response.text
+    prompt_path = os.path.join("prompts", "b-3.txt")
+    task_write_prompt = _read_text(prompt_path)
 
-def write_code(breakdown:str):
-    """Read the small broken down steps and return this file to the LLM which then creates the code to run."""
-    with open("broken_tasks.txt", "r") as f:
-        tasks = f.read()
-        
-    client = genai.Client(api_key="got you")
-
-    file = os.path.join('prompts', "b-3.txt")
-    with open(file, 'r') as f:
-        task_write_prompt = f.read()
-
-    response = client.models.generate_content(
-        model="gemini-2.0-flash-lite",
+    resp = client.models.generate_content(
+        model=GEMINI_MODEL,
         contents=[tasks, task_write_prompt],
     )
+    code = _strip_code_fences(resp.text or "")
+    _write_text("temp_script.py", code)
+    return code
 
-    txt = response.text
-    # Remove code fences like ```python, ``` and variations
-    cleaned = re.sub(r"```[a-zA-Z]*\n?", "", txt)
-    cleaned = cleaned.replace("```", "")
+def iterate_code(code: str, max_iterations: int = 20) -> str:
+    """Stage 3: Iterate until the script runs without stderr, using b-4.txt prompt."""
+    client = get_gemini_client()
 
-    with open("temp_script.py", "w") as f:
-        f.write(cleaned)
-
-    return cleaned
-
-def iterate_code(code: str):
-    """Fix code until it runs without errors using b-4.txt prompt."""
-    client = genai.Client(api_key="adfs")
-
-
-    max_iterations = 20
-    for _ in range(max_iterations):
-        result = subprocess.run(["uv", "run", "temp_script.py"], capture_output=True, text=True)
-
-        if not result.stderr:  # No errors
+    for i in range(max_iterations):
+        run = subprocess.run(
+            [sys.executable, "-I", "temp_script.py"],
+            capture_output=True,
+            text=True,
+        )
+        if run.returncode == 0 and not run.stderr.strip():
+            # Success
             break
 
-        fix_code_file = os.path.join('prompts', "b-4.txt")
-        with open(fix_code_file, 'r') as f:
-            fix_code_prompt = f.read()
+        # Ask the model to fix code using stderr as feedback
+        fix_prompt_path = os.path.join("prompts", "b-4.txt")
+        fix_code_prompt = _read_text(fix_prompt_path) + "\n\n" + (run.stderr or "")
 
-        fix_code_prompt = fix_code_prompt + "\n" + result.stderr
-        print(f"Iteration {_+1}: Fixing code with prompt:\n{fix_code_prompt}")
-        # Get model suggestion
-        response = client.models.generate_content(
-            model="gemini-2.0-flash-lite",
+        resp = client.models.generate_content(
+            model=GEMINI_MODEL,
             contents=[code, fix_code_prompt],
         )
-
-        # Extract text properly depending on SDK
-        cleaned = re.sub(r"```[a-zA-Z]*\n?", "", response.text)
-        cleaned = cleaned.replace("```", "")
-        code = cleaned  # Adjust if API returns structured parts
-
-        # Save fixed code
-        with open("temp_script.py", "w") as f:
-            f.write(code)
+        code = _strip_code_fences(resp.text or "")
+        _write_text("temp_script.py", code)
 
     return code
+
+# ---------- Routes ----------
+@app.get("/api/health")
+async def health():
+    return {"status": "ok"}
 
 @app.get("/")
 async def root():
     return {"message": "Hello!"}
 
-# create a post endpoint that processes this curl request `curl -X POST "http://127.0.0.1:8000/api/" -F "file=@question.txt"`
-
-# Accept both a text file and a CSV file in the request
-
-# Accept any number of files, with questions.txt always present
-
-
-# Accept any files regardless of field name
 @app.post("/api/")
 async def upload_file(request: Request):
+    """
+    Accept multipart/form-data with at least one file named 'questions.txt'.
+    All other files are saved under ./attachments for the generated code to use.
+    """
     try:
         form = await request.form()
-        files = []
+        files: List = []
         questions_file = None
+
         os.makedirs("attachments", exist_ok=True)
 
-        # Iterate over all form fields
+        # Collect files; detect the required questions.txt
         for key in form:
             value = form[key]
-            if hasattr(value, "filename"):
+            if hasattr(value, "filename"):  # UploadFile
                 files.append(value)
                 if value.filename == "questions.txt":
                     questions_file = value
@@ -137,25 +141,43 @@ async def upload_file(request: Request):
         if not questions_file:
             return JSONResponse(status_code=400, content={"error": "questions.txt is required."})
 
-        content = await questions_file.read()
-        text = content.decode("utf-8")
-        breakdown = task_breakdown(text)
+        # Read the user's question text
+        q_bytes = await questions_file.read()
+        question_text = q_bytes.decode("utf-8", errors="ignore")
 
-        # Save all files except questions.txt
+        # Save other files as attachments for the generated script
         for f in files:
             if f.filename != "questions.txt":
-                file_path = os.path.join("attachments", f.filename)
-                with open(file_path, "wb") as out:
-                    out.write(await f.read())
+                fp = os.path.join("attachments", f.filename)
+                # read file content now (stream pointer is at start)
+                content = await f.read()
+                with open(fp, "wb") as out:
+                    out.write(content)
 
-        final_code = iterate_code(write_code(breakdown))
-        json_ans = subprocess.run(["uv", "run", "temp_script.py"], capture_output=True, text=True).stdout
+        # Run the LLM pipeline
+        breakdown = task_breakdown(question_text)
+        code = write_code(breakdown)
+        final_code = iterate_code(code)
 
-        print(json_ans)
-        return json_ans
+        # Final run to produce the answer
+        final_run = subprocess.run(
+            [sys.executable, "-I", "temp_script.py"],
+            capture_output=True,
+            text=True,
+        )
+        output_text = final_run.stdout.strip()
+
+        # Try to return JSON if it's valid JSON; else plain text
+        try:
+            return JSONResponse(content=json.loads(output_text))
+        except json.JSONDecodeError:
+            return PlainTextResponse(output_text)
+
     except Exception as e:
+        # Return a structured error
         return JSONResponse(status_code=400, content={"error": str(e)})
 
 if __name__ == "__main__":
     import uvicorn
+    # Local dev only; on Railway Procfile will launch uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
